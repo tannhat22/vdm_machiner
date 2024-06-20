@@ -630,11 +630,12 @@ class PlcService(Node):
             if dataHistory is None:
                 return response
 
-            if self.text_to_date(dataHistory['dictType']['dates'][0]) < minDate:
-                minDate = self.text_to_date(dataHistory['dictType']['dates'][0])
-            
-            if self.text_to_date(dataHistory['dictType']['dates'][-1]) > maxDate:
-                maxDate = self.text_to_date(dataHistory['dictType']['dates'][-1])
+            if len(dataHistory['dictType']['dates']) > 0:
+                if self.text_to_date(dataHistory['dictType']['dates'][0]) < minDate:
+                    minDate = self.text_to_date(dataHistory['dictType']['dates'][0])
+                
+                if self.text_to_date(dataHistory['dictType']['dates'][-1]) > maxDate:
+                    maxDate = self.text_to_date(dataHistory['dictType']['dates'][-1])
         
         response.success = True
         response.status = self.status['success']
@@ -763,9 +764,13 @@ class PlcService(Node):
         self.machines_info = self.get_machines_inform_db()
         if self.machines_info:
             # Xóa đối tượng machine nếu nó không còn tại
+            machineDelete = []
             for key in self.machines:
                 if key not in self.machines_info['machineName']:
-                    self.machines.pop(key)
+                    machineDelete.append(key)
+
+            for key in machineDelete:
+                self.machines.pop(key)
 
             # Thêm một đối tượng machine mới
             for i in range(self.machines_info['quantity']):

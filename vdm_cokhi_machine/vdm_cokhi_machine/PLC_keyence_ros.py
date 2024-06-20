@@ -295,6 +295,21 @@ class PlcService(Node):
             self.isPLCRun = True
             self.dataMachines_res = ['DM',self.dataMachines_res[1],'.U',
                                      (self.dataMachine_length + self.separateMachine) * self.machines_info['PLC_address'][-1]]
+
+            # Thêm máy mới vào self.machines nếu như chưa tồn tại
+            for i in range(self.machines_info['quantity']):
+                if self.machines_info['machineName'][i] not in self.machines:
+                    self.machines[self.machines_info['machineName'][i]] = State(ID=self.machines_info['idMachines'][i])
+
+            # Xóa các phần tử self.machines không còn hoặc đã bị thay đổi trong database
+            machineDelete = []
+            for key in self.machines:
+                if key not in self.machines_info['machineName']:
+                    machineDelete.append(key)
+            
+            for key in machineDelete:
+                self.machines.pop(key)         
+        
         else:
             self.isPLCRun = False
         # self.dataMachines_res = ['DM',self.dataMachines_res[1],'.U',(self.dataMachine_length + self.separateMachine) * self.machines_info['PLC_address'][-1]]

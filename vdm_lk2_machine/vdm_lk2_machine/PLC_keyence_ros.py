@@ -39,6 +39,8 @@ class PlcService(Node):
         self.get_logger().info(f"PLC model: {self.plc_model}")
         self.get_logger().info(f"PLC IP address: {self.IP_addres_PLC}")
         self.get_logger().info(f"PLC Port address: {self.port_addres_PLC}")
+        self.get_logger().info(f'Password: {self.password}')
+
 
         self.soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._is_connected = False
@@ -49,7 +51,7 @@ class PlcService(Node):
         # Database path:
         self.database_path = os.path.join(os.path.expanduser("~"),
                              'ros2_ws/src/vdm_machiner/vdm_lk2_machine/database/machine.db')
-        # self.database_path = '/home/raspberry/ros2_ws/src/vdm_machiner/vdm_lk2_machine/database/machine.db'
+        
         self.tableName = 'MACHINES'
         self.conn = sqlite3.connect(self.database_path)
         self.cur = self.conn.cursor()
@@ -84,7 +86,6 @@ class PlcService(Node):
 
         self.save_data_bit = ['MR',202,'.U',1]
 
-        self.password = '10064'
         self.password_write_res = ['DM',500,'.U',1]
 
         self.reset_bit = ['MR',200,'.U',1]
@@ -214,9 +215,9 @@ class PlcService(Node):
         if state == MachineState.MACHINE_OFF:
             stateDes = "Tắt máy"
         elif state == MachineState.MACHINE_NOLOAD:
-            stateDes = "Chạy không tải"
+            stateDes = "Dừng máy, máy lỗi"
         elif state == MachineState.MACHINE_UNDERLOAD:
-            stateDes = "Chạy có tải"
+            stateDes = "Máy sản xuất"
         elif state == MachineState.MACHINE_OVERLOAD:
             stateDes = "Quá tải"
 
@@ -296,6 +297,21 @@ class PlcService(Node):
             self.isPLCRun = True
             self.dataMachines_res = ['DM',self.dataMachines_res[1],'.U',
                                      (self.dataMachine_length + self.separateMachine) * self.machines_info['PLC_address'][-1]]
+
+            # Thêm máy mới vào self.machines nếu như chưa tồn tại
+            for i in range(self.machines_info['quantity']):
+                if self.machines_info['machineName'][i] not in self.machines:
+                    self.machines[self.machines_info['machineName'][i]] = State(ID=self.machines_info['idMachines'][i])
+
+            # Xóa các phần tử self.machines không còn hoặc đã bị thay đổi trong database
+            machineDelete = []
+            for key in self.machines:
+                if key not in self.machines_info['machineName']:
+                    machineDelete.append(key)
+            
+            for key in machineDelete:
+                self.machines.pop(key)        
+        
         else:
             self.isPLCRun = False
         # self.dataMachines_res = ['DM',self.dataMachines_res[1],'.U',(self.dataMachine_length + self.separateMachine) * self.machines_info['PLC_address'][-1]]
@@ -391,7 +407,6 @@ class PlcService(Node):
             print(e)
             return False
     
-    
     def timer_callback(self):
         if (not self.machines_info
             or not self.isPLCRun):
@@ -407,9 +422,9 @@ class PlcService(Node):
                                      self.clock_res[2],
                                      self.clock_res[3])
 
+        dayOfWeek = dataClock[6]
         realTimePLc = datetime.datetime(2000 + dataClock[0],dataClock[1],dataClock[2],
                                              dataClock[3],dataClock[4],dataClock[5])
-
 
         # DAY-06:00:00-17:59:59, NIGHT-18:00:00:-05:59:59
         if (realTimePLc.time() >= self.dayShift[0] and
@@ -453,6 +468,7 @@ class PlcService(Node):
 
         msg = MachineStateArray()
         msg.shift = shiftNow
+        msg.day_of_week = dayOfWeek
         msg.state_machines = state_machines
         self.pub_state_machine.publish(msg)
 

@@ -4,14 +4,16 @@ import sqlite3
 import datetime
 from collections import Counter
 import os
+import openpyxl
+
 
 from std_msgs.msg import Empty
 from vdm_machine_msgs.msg import OverralMachine, MachineState, MachineStateArray, \
                                        MachinesStateStamped, MachineData, MachineDataStamped, \
-                                       MachineLog, MachineLogStamped
+                                       MachineLog, MachineLogStamped, MachineProducePlan
 from vdm_machine_msgs.srv import GetAllMachineName, GetMachineData, GetStageData, \
-                                       GetMachineLogs, GetMinMaxDate, CreateMachine, \
-                                       UpdateMachine, DeleteMachine
+                                       GetMachineLogs, GetMinMaxDate, GetProducePlan, \
+                                       CreateMachine, UpdateMachine, DeleteMachine
 
 
 # class Machine:
@@ -49,8 +51,11 @@ class PlcService(Node):
 
         # Database path:
         self.database_path = os.path.join(os.path.expanduser("~"),
-                             'ros2_ws/src/vdm_machiner/vdm_lk2_machine/database/machine.db') 
-        # self.database_path = '/home/raspberry/ros2_ws/src/vdm_machiner/vdm_lk2_machine/database/machine.db'
+                             'ros2_ws/src/vdm_machiner/vdm_lk2_machine/database/machine.db')
+
+        self.producePlan_path = os.path.join(os.path.expanduser("~"),
+                                'ros2_ws/src/vdm_machiner/vdm_lk2_machine/database/form_khsx_cdth.xlsx')
+
         self.tableName = 'MACHINES'
         self.conn = sqlite3.connect(self.database_path,
                                     detect_types=sqlite3.PARSE_DECLTYPES |
@@ -70,6 +75,8 @@ class PlcService(Node):
         self.getStageData_srv = self.create_service(GetStageData, 'get_stage_data', self.get_stage_data_cb)
         self.getLogsData_srv = self.create_service(GetMachineLogs, 'get_logs_data', self.get_machine_logs_cb)
         self.getMinMaxDate_srv = self.create_service(GetMinMaxDate, 'get_min_max_date', self.get_min_max_date_cb)
+        self.getProducePlans_srv = self.create_service(GetProducePlan, 'get_produce_plans', self.get_produce_plans_cb)
+
         # self.resetMachine_srv = self.create_service(ResetMachine, 'reset_machine', self.reset_machine_cb)
         self.createMachine_srv = self.create_service(CreateMachine, 'create_machine', self.create_machine_cb)
         self.updateMachine_srv = self.create_service(UpdateMachine, 'update_machine', self.update_machine_cb)
@@ -114,9 +121,17 @@ class PlcService(Node):
 
         # Variables:
         self.shiftNow = MachineStateArray.DAY_SHIFT
-        self.dayShift = [datetime.time(hour=6, minute=0, second=0),
-                         datetime.time(hour=17, minute=59, second=59)]
+        self.dayOfWeek = MachineStateArray.MONDAY
+        self.dayShift = [datetime.time(hour=7, minute=0, second=0),
+                         datetime.time(hour=18, minute=59, second=59)]
 
+        self.dayExcelColumn = {"mon": "C", "tue": "D", "wed": "E", "thu": "F", "fri": "G", "sat": "H",
+                               "mon2": "I","tue2": "J","wed2": "K","thu2": "L","fri2": "M","sat2": "N"}
+
+        self.machineExcelRow = {"J01": 3,"J02": 5,"J03": 7,"J04": 9,"J05": 11,"J06": 13,"J07": 15,"J08": 17,
+                                "J09": 19,"J10": 21,"J11": 23,"J12": 25,"J13": 27,"J14": 29,"J15": 31,"J16": 33,
+                                "J17": 35,"J18": 37,"J19": 39,"J20": 41,"J21": 43,"J22": 45,"J23": 47,"J24": 49}
+        
         timer_period = 0.5
         self.timer = self.create_timer(timer_period, self.timer_callback)
         self.get_logger().info("is running!!!!!!!!!!")
@@ -293,9 +308,9 @@ class PlcService(Node):
             minDateObj = self.text_to_date(minDate)
             maxDateObj = self.text_to_date(maxDate)
 
-            if shift == "CN":
+            if shift == "DAY":
                 self.cur.execute("SELECT * from " + tableName + " WHERE DATE = ?",(maxDate,))
-            elif shift == "CD":
+            elif shift == "NIGHT":
                 nightShift = (self.text_to_datetime(maxDate) + datetime.timedelta(days=1)).strftime("%d/%m/%Y")
                 self.cur.execute("SELECT * from " + tableName + " WHERE DATE = ? OR DATE = ?",(maxDate, nightShift))
             else:
@@ -308,7 +323,7 @@ class PlcService(Node):
                 # date = row[1].strftime("%d/%m/%Y")
                 timeObj = self.text_to_time(row[2])
                 logMsg = MachineLog()
-                if shift == "CN":
+                if shift == "DAY":
                     if (timeObj >= self.dayShift[0] and
                         timeObj <= self.dayShift[1]):
                         logMsg.time = row[2]
@@ -318,7 +333,7 @@ class PlcService(Node):
                             result[row[1]] = [logMsg]
                         else:
                             result[row[1]].append(logMsg)
-                elif shift == "CD":
+                elif shift == "NIGHT":
                     if ((row[1] == maxDate and
                          timeObj > self.dayShift[1]) or
                         (row[1] == nightShift and
@@ -463,6 +478,46 @@ class PlcService(Node):
                     return False
                 else:    
                     return True
+        except Exception as e:
+            print(e)
+            return False
+
+    # Tìm kế hoạch sản xuất trong file excel đầu vào:
+    def find_produce_plan(self, sheet, machine_name, day_of_week_id, shift: str = None):
+        dayOfWeek = ""
+        if day_of_week_id == MachineStateArray.MONDAY:
+            dayOfWeek = "mon"
+        elif day_of_week_id == MachineStateArray.TUESDAY:
+            dayOfWeek = "tue"
+        elif day_of_week_id == MachineStateArray.THURSDAY:
+            dayOfWeek = "thu"
+        elif day_of_week_id == MachineStateArray.WEDNESDAY:
+            dayOfWeek = "wed"
+        elif day_of_week_id == MachineStateArray.FRIDAY:
+            dayOfWeek = "fri"
+        elif day_of_week_id == MachineStateArray.SATURDAY:
+            dayOfWeek = "sat"
+        elif day_of_week_id == MachineStateArray.SUNDAY:
+            dayOfWeek = "sun"
+            return [{'plan': 0, 'spm': 0}]  
+
+        try:
+            if shift is not None:
+                if shift == MachineStateArray.DAY_SHIFT:
+                    planCell = self.dayExcelColumn[dayOfWeek] + str(self.machineExcelRow[machine_name])
+                    spmCell = self.dayExcelColumn[f"{dayOfWeek}2"] + str(self.machineExcelRow[machine_name])
+                else:
+                    planCell = self.dayExcelColumn[dayOfWeek] + str(self.machineExcelRow[machine_name]+1)
+                    spmCell = self.dayExcelColumn[f"{dayOfWeek}2"] + str(self.machineExcelRow[machine_name]+1)
+                return [{'plan': sheet[planCell].value,
+                         'spm': sheet[spmCell].value}]
+            else:
+                dayPlanCell = self.dayExcelColumn[dayOfWeek] + str(self.machineExcelRow[machine_name])
+                daySpmCell = self.dayExcelColumn[f"{dayOfWeek}2"] + str(self.machineExcelRow[machine_name])
+                nightPlanCell = self.dayExcelColumn[dayOfWeek] + str(self.machineExcelRow[machine_name]+1)
+                nightSpmCell = self.dayExcelColumn[f"{dayOfWeek}2"] + str(self.machineExcelRow[machine_name]+1)
+                return [{'plan': sheet[dayPlanCell].value, 'spm': sheet[daySpmCell].value}, 
+                        {'plan': sheet[nightPlanCell].value, 'spm': sheet[nightSpmCell].value}]
         except Exception as e:
             print(e)
             return False
@@ -643,6 +698,39 @@ class PlcService(Node):
         response.max_date = maxDate.strftime("%d/%m/%Y")
         return response
 
+    def get_produce_plans_cb(self, request: GetProducePlan.Request, response: GetProducePlan.Response):
+        response.success = False
+        workbook = openpyxl.load_workbook(self.producePlan_path)
+        sheet = workbook.active
+        try:
+            if request.get_all_produce_plan:
+                allMachinesName = self.machines_info['machineName']
+                producePlans = []
+                for i in range(len(allMachinesName)):
+                    producePlanMsg = MachineProducePlan()
+                    producePlanMsg.machine_id = self.machines_info['idMachines'][i]
+                    producePlanMsg.machine_name = allMachinesName[i]                          
+                    producePlanData = self.find_produce_plan(sheet=sheet, machine_name=allMachinesName[i],
+                                           day_of_week_id=self.dayOfWeek,shift=self.shiftNow)
+                    if producePlanData:
+                        producePlanMsg.produce_plan = producePlanData[0]['plan']
+                        producePlanMsg.spm = int(producePlanData[0]['spm'])
+                        producePlans.append(producePlanMsg)
+                    else:
+                        return response
+
+                response.produce_plane_data = producePlans
+                response.success = True
+                workbook.close()
+                return response
+            else:
+                return response
+            
+        except Exception as e:
+            print(e)
+            workbook.close()
+            return response
+        
     # def reset_machine_cb(self, request: ResetMachine.Request, response: ResetMachine.Response):
     #     machine = self.get_machine_inform_db(request.id_machine)
     #     self.get_logger().info(f'Reset machine: {machine["name"]}, '
@@ -818,6 +906,7 @@ class PlcService(Node):
 
     def state_machine_cb(self, msg: MachineStateArray):
         self.shiftNow = msg.shift
+        self.dayOfWeek = msg.day_of_week
         for state in msg.state_machines:
             if state.name in self.machines:
                 self.machines[state.name].state = state
@@ -859,6 +948,7 @@ class PlcService(Node):
         msg = MachinesStateStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.shift = self.shiftNow
+        msg.day_of_week = self.dayOfWeek
         msg.machines_quantity = len(machineID)
         msg.types_quantity = len(overral_machines_dict)
         msg.id_machines = machineID

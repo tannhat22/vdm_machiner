@@ -1,0 +1,5 @@
+bool get_all_produce_plan
+---
+bool success
+string status
+MachineProducePlan[] produce_plane_data
