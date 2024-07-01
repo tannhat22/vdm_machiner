@@ -32,7 +32,7 @@ def generate_launch_description():
             emulate_tty=True,
             parameters=[
                 {
-                    'port': 9090,
+                    'port': 9091,
                     'address': '192.168.1.69',
                     'retry_startup_delay': 5.0,
                     'fragment_timeout': 600,
@@ -76,7 +76,7 @@ def generate_launch_description():
             emulate_tty=True,
             parameters=[
                 {
-                    'port': 9090,
+                    'port': 9091,
                     'address': '192.168.48.247',
                     'retry_startup_delay': 5.0,
                     'fragment_timeout': 600,
