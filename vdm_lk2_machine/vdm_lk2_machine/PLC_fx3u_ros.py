@@ -107,7 +107,7 @@ class PlcService(Node):
             'noload': [1,1],
             'underload': [1,2],
             'offtime': [1,3],
-            'material': [1,4]
+            'error': [1,4]
             # 'valueSetting': [3,4],
             # 'timeReachSpeed': [1,7],
         }
@@ -185,7 +185,7 @@ class PlcService(Node):
 
     
     # Thêm dữ liệu ngày mới vào bảng database:
-    def add_history_data_db(self, tableName, date, shift, noLoad, underLoad, offtime):
+    def add_history_data_db(self, tableName, date, shift, underLoad, noLoad, error, offtime):
         try:
             # self.cur.execute("SELECT * from " + tableName)
             # totalDates = len(self.cur.fetchall())
@@ -202,7 +202,9 @@ class PlcService(Node):
                 # self.delete_table("momenttable")
                 self.conn.commit()
             
-            self.cur.execute("INSERT INTO " + tableName + " (DATE, SHIFT, NOLOAD, UNDERLOAD, OFFTIME) VALUES (?, ?, ?, ?, ?)", (date, shift, noLoad, underLoad, offtime))
+            self.cur.execute("INSERT INTO " + tableName +
+                             " (DATE, SHIFT, UNDERLOAD, NOLOAD, ERROR, OFFTIME) VALUES (?, ?, ?, ?, ?, ?)",
+                             (date, shift, underLoad, noLoad, error, offtime))
             self.conn.commit()
             return True
         except Exception as e:
@@ -215,11 +217,11 @@ class PlcService(Node):
         if state == MachineState.MACHINE_OFF:
             stateDes = "Tắt máy"
         elif state == MachineState.MACHINE_NOLOAD:
-            stateDes = "Dừng máy, máy lỗi"
+            stateDes = "Dừng máy"
         elif state == MachineState.MACHINE_UNDERLOAD:
             stateDes = "Máy sản xuất"
         elif state == MachineState.MACHINE_OVERLOAD:
-            stateDes = "Quá tải"
+            stateDes = "Máy lỗi"
 
         try:
             self.cur.execute("SELECT COUNT(*) from " + tableName)
@@ -314,10 +316,13 @@ class PlcService(Node):
         for i in range(0,self.machines_info['quantity']):
             j = (self.machines_info['PLC_address'][i] - 1) * (self.dataMachine_length + self.separateMachine)
             name = self.machines_info['machineName'][i]
-            noload = data[j + self.dataMachine_res_structure['noload'][1]]
             underload = data[j + self.dataMachine_res_structure['underload'][1]]
+            noload = data[j + self.dataMachine_res_structure['noload'][1]]
+            error = data[j + self.dataMachine_res_structure['error'][1]]
             offtime = data[j + self.dataMachine_res_structure['offtime'][1]]
-            if not self.add_history_data_db(name,date,shiftDes,noload,underload,offtime):
+            if not self.add_history_data_db(tableName=name, date=date,
+                                            shift=shiftDes, underLoad=underload,
+                                            noLoad=noload, error=error, offtime=offtime):
                 self.get_logger().info("ERROR: Save data of day error!!!")
                 return False
         
@@ -371,8 +376,9 @@ class PlcService(Node):
             machineState.name = self.machines_info['machineName'][i]
             machineState.type = self.machines_info['machineType'][i]
             machineState.signal_light = dataMachines[j + self.dataMachine_res_structure['signalLight'][1]]
-            machineState.noload = dataMachines[j + self.dataMachine_res_structure['noload'][1]]
             machineState.underload = dataMachines[j + self.dataMachine_res_structure['underload'][1]]
+            machineState.noload = dataMachines[j + self.dataMachine_res_structure['noload'][1]]
+            machineState.error = dataMachines[j + self.dataMachine_res_structure['error'][1]]
             machineState.offtime = dataMachines[j + self.dataMachine_res_structure['offtime'][1]]
             machineState.material = dataMachines[j + self.dataMachine_res_structure['material'][1]]
             state_machines.append(machineState)

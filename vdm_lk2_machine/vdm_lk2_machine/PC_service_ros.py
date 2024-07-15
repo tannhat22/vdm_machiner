@@ -164,8 +164,9 @@ class PlcService(Node):
             ''' (ID INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                  DATE TIMESTAMP NOT NULL,
                  SHIFT TEXT NOT NULL,
-                 NOLOAD INTEGER NOT NULL,
                  UNDERLOAD INTEGER NOT NULL,
+                 NOLOAD INTEGER NOT NULL,
+                 ERROR INTEGER NOT NULL,
                  OFFTIME INTEGER NOT NULL);''')
         except Exception as e:
             print(Exception)
@@ -270,8 +271,9 @@ class PlcService(Node):
             dictType = {
                 'dates': [],
                 'shifts': [],
-                'noload': [],
                 'underload': [],
+                'noload': [],
+                'error': [],
                 'offtime': []
             }
             for row in rows:
@@ -282,16 +284,18 @@ class PlcService(Node):
                     # msg ros type
                     dataMsg.date = row[1].strftime("%d/%m/%Y")
                     dataMsg.shift = row[2]
-                    dataMsg.noload = row[3]
-                    dataMsg.underload = row[4]
-                    dataMsg.offtime = row[5]
+                    dataMsg.underload = row[3]
+                    dataMsg.noload = row[4]
+                    dataMsg.error = row[5]
+                    dataMsg.offtime = row[6]
                     msgType.append(dataMsg)
                     # list type
                     dictType['dates'].append(row[1].strftime("%d/%m/%Y"))
                     dictType['shifts'].append(row[2])
-                    dictType['noload'].append(row[3])
-                    dictType['underload'].append(row[4])
-                    dictType['offtime'].append(row[5])
+                    dictType['underload'].append(row[3])
+                    dictType['noload'].append(row[4])
+                    dictType['error'].append(row[5])
+                    dictType['offtime'].append(row[6])
             return {
                 'msgType': msgType,
                 'dictType': dictType
@@ -374,27 +378,6 @@ class PlcService(Node):
         except Exception as e:
             print(e)
             return False
-    
-    # Thêm dữ liệu ngày mới vào bảng database:
-    # def add_history_data_db(self, tableName, date, noLoad, underLoad, offtime):
-    #     try:
-    #         self.cur.execute("SELECT * from " + tableName)
-    #         totalDates = len(self.cur.fetchall())
-    #         if totalDates >= self.maximumDates:
-    #             self.cur.execute("DELETE FROM " + tableName + " WHERE ID = 1")
-    #             self.cur.execute("CREATE TABLE momenttable AS SELECT * FROM " + tableName)
-    #             self.cur.execute("DELETE FROM " + tableName)
-    #             self.cur.execute("DELETE FROM sqlite_sequence WHERE name='" + tableName + "'")
-    #             self.cur.execute("INSERT INTO " + tableName + " (DATE, NOLOAD, UNDERLOAD, OFFTIME) SELECT DATE, NOLOAD, UNDERLOAD, OFFTIME FROM momenttable")
-    #             self.delete_table("momenttable")
-    #             self.conn.commit()
-            
-    #         self.cur.execute("INSERT INTO " + tableName + " (DATE, NOLOAD, UNDERLOAD, OFFTIME) VALUES (?, ?, ?, ?)", (date, noLoad, underLoad, offtime))
-    #         self.conn.commit()
-    #         return True
-    #     except Exception as e:
-    #         print(e)
-    #         return False
 
     # Sửa tên bảng trong database:
     def update_table_name(self, tableOldName, tableNewName):
@@ -616,8 +599,9 @@ class PlcService(Node):
         stageRawData = {
             'dates': [],
             'shift': [],
-            'noload': [],
             'underload': [],
+            'noload': [],
+            'error': [],
             'offtime': []
         }
         stageData = []
@@ -636,8 +620,9 @@ class PlcService(Node):
             stageData.append(machineMsg)
             stageRawData['dates'].extend(dataHistory['dictType']['dates'])
             stageRawData['shift'].extend(dataHistory['dictType']['shifts'])
-            stageRawData['noload'].extend(dataHistory['dictType']['noload'])
             stageRawData['underload'].extend(dataHistory['dictType']['underload'])
+            stageRawData['noload'].extend(dataHistory['dictType']['noload'])
+            stageRawData['error'].extend(dataHistory['dictType']['error'])
             stageRawData['offtime'].extend(dataHistory['dictType']['offtime'])
 
         k = len(stageRawData['dates'])
@@ -648,13 +633,15 @@ class PlcService(Node):
                 machineMsg = MachineData()
                 machineMsg.date = stageRawData['dates'][i]
                 machineMsg.shift = stageRawData['shift'][i]
-                machineMsg.noload = stageRawData['noload'][i]
                 machineMsg.underload = stageRawData['underload'][i]
+                machineMsg.noload = stageRawData['noload'][i]
+                machineMsg.error = stageRawData['error'][i]
                 machineMsg.offtime = stageRawData['offtime'][i]
                 stageSumData[keyTime] = machineMsg
             else:
-                stageSumData[keyTime].noload += stageRawData['noload'][i]
                 stageSumData[keyTime].underload += stageRawData['underload'][i]
+                stageSumData[keyTime].noload += stageRawData['noload'][i]
+                stageSumData[keyTime].error += stageRawData['error'][i]
                 stageSumData[keyTime].offtime += stageRawData['offtime'][i]
 
         machineMsg = MachineDataStamped()
@@ -928,11 +915,12 @@ class PlcService(Node):
                 state_machines.append(machineState)
                 if machineState.type in overral_machines_dict:
                     overral_machines_dict[machineState.type][0] += 1
-                    overral_machines_dict[machineState.type][1] += machineState.noload
-                    overral_machines_dict[machineState.type][2] += machineState.underload
-                    overral_machines_dict[machineState.type][3] += machineState.offtime
+                    overral_machines_dict[machineState.type][1] += machineState.underload
+                    overral_machines_dict[machineState.type][2] += machineState.noload
+                    overral_machines_dict[machineState.type][3] += machineState.error
+                    overral_machines_dict[machineState.type][4] += machineState.offtime
                 else:
-                    overral_machines_dict[machineState.type] = [1, machineState.noload, machineState.underload, machineState.offtime]
+                    overral_machines_dict[machineState.type] = [1, machineState.underload, machineState.noload, machineState.error, machineState.offtime]
 
         # Tính số giờ theo từng loại máy
         overral_machines = []
@@ -940,9 +928,10 @@ class PlcService(Node):
             machineOverral = OverralMachine()
             machineOverral.type = type
             machineOverral.quantity = overral_machines_dict[type][0]
-            machineOverral.noload = overral_machines_dict[type][1]
-            machineOverral.underload = overral_machines_dict[type][2]
-            machineOverral.offtime = overral_machines_dict[type][3]
+            machineOverral.underload = overral_machines_dict[type][1]
+            machineOverral.noload = overral_machines_dict[type][2]
+            machineOverral.error = overral_machines_dict[type][3]
+            machineOverral.offtime = overral_machines_dict[type][4]
             overral_machines.append(machineOverral)
 
         msg = MachinesStateStamped()
