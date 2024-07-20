@@ -626,10 +626,10 @@ class PlcService(Node):
             stageRawData['offtime'].extend(dataHistory['dictType']['offtime'])
 
         k = len(stageRawData['dates'])
-        stageSumData = {}
+        stageSumRaw = {}
         for i in range(0,k):
             keyTime = f"{stageRawData['dates'][i]}-{stageRawData['shift'][i]}"
-            if keyTime not in stageSumData:
+            if keyTime not in stageSumRaw:
                 machineMsg = MachineData()
                 machineMsg.date = stageRawData['dates'][i]
                 machineMsg.shift = stageRawData['shift'][i]
@@ -637,16 +637,18 @@ class PlcService(Node):
                 machineMsg.noload = stageRawData['noload'][i]
                 machineMsg.error = stageRawData['error'][i]
                 machineMsg.offtime = stageRawData['offtime'][i]
-                stageSumData[keyTime] = machineMsg
+                stageSumRaw[keyTime] = machineMsg
             else:
-                stageSumData[keyTime].underload += stageRawData['underload'][i]
-                stageSumData[keyTime].noload += stageRawData['noload'][i]
-                stageSumData[keyTime].error += stageRawData['error'][i]
-                stageSumData[keyTime].offtime += stageRawData['offtime'][i]
+                stageSumRaw[keyTime].underload += stageRawData['underload'][i]
+                stageSumRaw[keyTime].noload += stageRawData['noload'][i]
+                stageSumRaw[keyTime].error += stageRawData['error'][i]
+                stageSumRaw[keyTime].offtime += stageRawData['offtime'][i]
+
+        stageSumFilter = dict(sorted(stageSumRaw.items(), key=lambda item: self.text_to_date(item[0].split('-')[0])))
 
         machineMsg = MachineDataStamped()
         machineMsg.machine_name = request.stage
-        machineMsg.machine_data = list(stageSumData.values())
+        machineMsg.machine_data = list(stageSumFilter.values())
         stageData.append(machineMsg)
         
         response.success = True
