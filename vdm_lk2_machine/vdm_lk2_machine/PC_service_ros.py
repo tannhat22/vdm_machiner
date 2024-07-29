@@ -4,6 +4,7 @@ import sqlite3
 import datetime
 from collections import Counter
 import os
+import json
 import openpyxl
 
 
@@ -13,7 +14,7 @@ from vdm_machine_msgs.msg import OverralMachine, MachineState, MachineStateArray
                                        MachineLog, MachineLogStamped, MachineProducePlan
 from vdm_machine_msgs.srv import GetAllMachineName, GetMachineData, GetStageData, \
                                        GetMachineLogs, GetMinMaxDate, GetProducePlan, \
-                                       CreateMachine, UpdateMachine, DeleteMachine
+                                       CreateMachine, UpdateMachine, UpdateProducePlan, DeleteMachine
 
 
 # class Machine:
@@ -80,6 +81,7 @@ class PlcService(Node):
         # self.resetMachine_srv = self.create_service(ResetMachine, 'reset_machine', self.reset_machine_cb)
         self.createMachine_srv = self.create_service(CreateMachine, 'create_machine', self.create_machine_cb)
         self.updateMachine_srv = self.create_service(UpdateMachine, 'update_machine', self.update_machine_cb)
+        self.updateProducePlan_srv = self.create_service(UpdateProducePlan, 'update_produce_plan', self.update_produce_plan_cb)
         self.deleteMachine_srv = self.create_service(DeleteMachine, 'delete_machine', self.delete_machine_cb)
 
 
@@ -125,8 +127,14 @@ class PlcService(Node):
         self.dayShift = [datetime.time(hour=7, minute=0, second=0),
                          datetime.time(hour=18, minute=59, second=59)]
 
-        self.dayExcelColumn = {"mon": "C", "tue": "D", "wed": "E", "thu": "F", "fri": "G", "sat": "H",
-                               "mon2": "I","tue2": "J","wed2": "K","thu2": "L","fri2": "M","sat2": "N"}
+        self.dayExcelColumn = {
+                                "mon": ["C",'I','O'],
+                                "tue": ["D",'J','P'],
+                                "wed": ["E",'K','Q'],
+                                "thu": ["F",'L','R'],
+                                "fri": ["G",'M','S'],
+                                "sat": ["H",'N','T']
+                               }
 
         self.machineExcelRow = {"J01": 3,"J02": 5,"J03": 7,"J04": 9,"J05": 11,"J06": 13,"J07": 15,"J08": 17,
                                 "J09": 19,"J10": 21,"J11": 23,"J12": 25,"J13": 27,"J14": 29,"J15": 31,"J16": 33,
@@ -482,25 +490,31 @@ class PlcService(Node):
             dayOfWeek = "sat"
         elif day_of_week_id == MachineStateArray.SUNDAY:
             dayOfWeek = "sun"
-            return [{'plan': 0, 'spm': 0}]  
+            return [{'plan': 0, 'spm': 0, 'code': 'null'}]  
 
         try:
             if shift is not None:
                 if shift == MachineStateArray.DAY_SHIFT:
-                    planCell = self.dayExcelColumn[dayOfWeek] + str(self.machineExcelRow[machine_name])
-                    spmCell = self.dayExcelColumn[f"{dayOfWeek}2"] + str(self.machineExcelRow[machine_name])
+                    planCell = self.dayExcelColumn[dayOfWeek][0] + str(self.machineExcelRow[machine_name])
+                    spmCell = self.dayExcelColumn[dayOfWeek][1] + str(self.machineExcelRow[machine_name])
+                    codeCell = self.dayExcelColumn[dayOfWeek][2] + str(self.machineExcelRow[machine_name])
                 else:
-                    planCell = self.dayExcelColumn[dayOfWeek] + str(self.machineExcelRow[machine_name]+1)
-                    spmCell = self.dayExcelColumn[f"{dayOfWeek}2"] + str(self.machineExcelRow[machine_name]+1)
+                    planCell = self.dayExcelColumn[dayOfWeek][0] + str(self.machineExcelRow[machine_name]+1)
+                    spmCell = self.dayExcelColumn[dayOfWeek][1] + str(self.machineExcelRow[machine_name]+1)
+                    codeCell = self.dayExcelColumn[dayOfWeek][2] + str(self.machineExcelRow[machine_name]+1)
+
                 return [{'plan': sheet[planCell].value,
-                         'spm': sheet[spmCell].value}]
+                         'spm': sheet[spmCell].value,
+                         'code': sheet[codeCell].value}]
             else:
-                dayPlanCell = self.dayExcelColumn[dayOfWeek] + str(self.machineExcelRow[machine_name])
-                daySpmCell = self.dayExcelColumn[f"{dayOfWeek}2"] + str(self.machineExcelRow[machine_name])
-                nightPlanCell = self.dayExcelColumn[dayOfWeek] + str(self.machineExcelRow[machine_name]+1)
-                nightSpmCell = self.dayExcelColumn[f"{dayOfWeek}2"] + str(self.machineExcelRow[machine_name]+1)
-                return [{'plan': sheet[dayPlanCell].value, 'spm': sheet[daySpmCell].value}, 
-                        {'plan': sheet[nightPlanCell].value, 'spm': sheet[nightSpmCell].value}]
+                dayPlanCell = self.dayExcelColumn[dayOfWeek][0] + str(self.machineExcelRow[machine_name])
+                daySpmCell = self.dayExcelColumn[dayOfWeek][1] + str(self.machineExcelRow[machine_name])
+                dayCodeCell = self.dayExcelColumn[dayOfWeek][2] + str(self.machineExcelRow[machine_name])
+                nightPlanCell = self.dayExcelColumn[dayOfWeek][0] + str(self.machineExcelRow[machine_name]+1)
+                nightSpmCell = self.dayExcelColumn[dayOfWeek][1] + str(self.machineExcelRow[machine_name]+1)
+                nightCodeCell = self.dayExcelColumn[dayOfWeek][2] + str(self.machineExcelRow[machine_name]+1)
+                return [{'plan': sheet[dayPlanCell].value, 'spm': sheet[daySpmCell].value, 'code': sheet[dayCodeCell].value}, 
+                        {'plan': sheet[nightPlanCell].value, 'spm': sheet[nightSpmCell].value, 'code': sheet[nightCodeCell].value}]
         except Exception as e:
             print(e)
             return False
@@ -704,6 +718,7 @@ class PlcService(Node):
                     if producePlanData:
                         producePlanMsg.produce_plan = producePlanData[0]['plan']
                         producePlanMsg.spm = int(producePlanData[0]['spm'])
+                        producePlanMsg.produce_code = producePlanData[0]['code']
                         producePlans.append(producePlanMsg)
                     else:
                         return response
@@ -811,6 +826,32 @@ class PlcService(Node):
                 response.status = self.status['success']
 
             return response
+
+        response.success = False
+        response.status = self.status['passErr']
+        return response
+
+    def update_produce_plan_cb(self, request: UpdateProducePlan.Request, response: UpdateProducePlan.Response):
+        self.get_logger().info('Receive request update produce plan')
+        if self.check_password(request.password): 
+            wb = openpyxl.Workbook()
+            ws = wb.active   
+            try:
+                newData = json.loads(request.excel_json)
+                for rowData in newData:
+                    ws.append(rowData)
+                wb.save(self.producePlan_path)
+                wb.close()
+
+                response.success = True
+                response.status = self.status['success']
+                return response
+            except Exception as e:
+                print(e)
+                wb.close()
+                response.success = False
+                response.status = self.status['fatalErr']
+                return response
 
         response.success = False
         response.status = self.status['passErr']

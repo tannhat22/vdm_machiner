@@ -36,6 +36,7 @@ set(srv_files
   "srv/ResetMachine.srv"
   "srv/ResetMachinePLC.srv"
   "srv/UpdateMachine.srv"
+  "srv/UpdateProducePlan.srv"
 )
 
 rosidl_generate_interfaces(${PROJECT_NAME}
