@@ -380,7 +380,7 @@ class PlcService(Node):
             machineState.noload = dataMachines[j + self.dataMachine_res_structure['noload'][1]]
             machineState.error = dataMachines[j + self.dataMachine_res_structure['error'][1]]
             machineState.offtime = dataMachines[j + self.dataMachine_res_structure['offtime'][1]]
-            machineState.material = dataMachines[j + self.dataMachine_res_structure['material'][1]]
+            # machineState.material = dataMachines[j + self.dataMachine_res_structure['material'][1]]
             state_machines.append(machineState)
 
             if machineState.signal_light != self.machines[machineState.name].signalLight:

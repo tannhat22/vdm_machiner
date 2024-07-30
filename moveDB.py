@@ -3,7 +3,7 @@ import sqlite3
 
 
 database_path = os.path.join(os.path.expanduser("~"),
-                             'ros2_ws/src/vdm_machiner/vdm_cokhi_machine/database/machine.db')
+                             'ros2_ws/src/vdm_machiner/vdm_lk2_machine/database/machine.db')
 
 conn = sqlite3.connect(database_path)
 cur = conn.cursor()
@@ -15,8 +15,9 @@ def create_table_machine_history_db(tableName):
         ''' (ID INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                 DATE TIMESTAMP NOT NULL,
                 SHIFT TEXT NOT NULL,
-                NOLOAD INTEGER NOT NULL,
                 UNDERLOAD INTEGER NOT NULL,
+                NOLOAD INTEGER NOT NULL,
+                ERROR INTEGER NOT NULL,
                 OFFTIME INTEGER NOT NULL);''')
     except Exception as e:
         print(Exception)
@@ -30,8 +31,8 @@ def copy_data_to_new_table(old_table_name, new_table_name):
 
         # Insert dữ liệu vào bảng mới với cột SHIFT được thiết lập mặc định là "Day"
         for row in rows:
-            cur.execute(f"INSERT INTO {new_table_name} (DATE, SHIFT, NOLOAD, UNDERLOAD, OFFTIME) VALUES (?, ?, ?, ?, ?)",
-                        (row[1], "CN", row[2], row[3], row[4]))
+            cur.execute(f"INSERT INTO {new_table_name} (DATE, SHIFT, UNDERLOAD, NOLOAD, ERROR, OFFTIME) VALUES (?, ?, ?, ?, ?, ?)",
+                        (row[1], row[2], row[4], row[3], 0, row[5]))
 
         # Lưu thay đổi và commit
         conn.commit()
@@ -50,7 +51,6 @@ def copy_data_to_new_table(old_table_name, new_table_name):
         print(e)
 
 # Sử dụng hàm để tạo bảng mới và sao chép dữ liệu từ bảng cũ
-
 try:
     cur.execute("SELECT * from " + 'MACHINES')
     rows = cur.fetchall()

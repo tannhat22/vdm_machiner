@@ -718,7 +718,7 @@ class PlcService(Node):
                     if producePlanData:
                         producePlanMsg.produce_plan = producePlanData[0]['plan']
                         producePlanMsg.spm = int(producePlanData[0]['spm'])
-                        producePlanMsg.produce_code = producePlanData[0]['code']
+                        producePlanMsg.produce_code = str(producePlanData[0]['code'])
                         producePlans.append(producePlanMsg)
                     else:
                         return response
