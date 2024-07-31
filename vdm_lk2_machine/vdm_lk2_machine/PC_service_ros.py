@@ -139,7 +139,7 @@ class PlcService(Node):
         self.machineExcelRow = {"J01": 3,"J02": 5,"J03": 7,"J04": 9,"J05": 11,"J06": 13,"J07": 15,"J08": 17,
                                 "J09": 19,"J10": 21,"J11": 23,"J12": 25,"J13": 27,"J14": 29,"J15": 31,"J16": 33,
                                 "J17": 35,"J18": 37,"J19": 39,"J20": 41,"J21": 43,"J22": 45,"J23": 47,"J24": 49,
-                                "Q51": 51,"Q52": 53,"Q53": 55,"Q54": 57,"Q55": 59,"Q56": 61, "Z31": 63}
+                                "Z31": 51, "Q51": 53,"Q52": 55,"Q53": 57,"Q54": 59,"Q55": 61,"Q56": 63}
         
         timer_period = 0.5
         self.timer = self.create_timer(timer_period, self.timer_callback)
@@ -717,8 +717,8 @@ class PlcService(Node):
                     producePlanData = self.find_produce_plan(sheet=sheet, machine_name=allMachinesName[i],
                                            day_of_week_id=self.dayOfWeek,shift=self.shiftNow)
                     if producePlanData:
-                        producePlanMsg.produce_plan = producePlanData[0]['plan']
-                        producePlanMsg.spm = int(producePlanData[0]['spm'])
+                        producePlanMsg.produce_plan = int(producePlanData[0]['plan'] or 0)
+                        producePlanMsg.spm = int(producePlanData[0]['spm'] or 0)
                         producePlanMsg.produce_code = str(producePlanData[0]['code'])
                         producePlans.append(producePlanMsg)
                     else:
