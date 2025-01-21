@@ -20,57 +20,54 @@ def get_device_number(device):
 
 
 class CommTypeError(Exception):
-    """Communication type error. Communication type must be "binary" or "ascii"
+    """Communication type error. Communication type must be "binary" or "ascii" """
 
-    """
     def __init__(self):
         pass
 
     def __str__(self):
-        return "communication type must be \"binary\" or \"ascii\""
+        return 'communication type must be "binary" or "ascii"'
+
 
 class PLCTypeError(Exception):
-    """PLC type error. PLC type must be "F"
+    """PLC type error. PLC type must be "F" """
 
-    """
     def __init__(self):
         pass
 
     def __str__(self):
         return "plctype must be 'F'"
 
+
 class Type1E:
     """mcprotocol 1E communication class.
 
     Attributes:
-        commtype(str):          communication type. "binary" or "ascii". (Default: "binary") 
+        commtype(str):          communication type. "binary" or "ascii". (Default: "binary")
         Header:                 A header of Ethernet. Normally, it is added automatically
         pc(int):                Specify the network module station No. of an access target. (0<= pc <= 255)
         timer(int):             time to raise Timeout error(/250msec). default=4(1sec)
                                 If PLC elapsed this time, PLC returns Timeout answer.
                                 Note: python socket timeout is always set timer+1sec. To recieve Timeout answer.
     """
-    plctype         = const.F_SERIES
-    commtype        = const.COMMTYPE_BINARY
-    pc              = 0xFF
-    timer           = 4 # MC protocol timeout. 250msec * 4 = 1 sec 
-    soc_timeout     = 2 # 2 sec
-    _is_connected   = False
-    _SOCKBUFSIZE    = 4096
-    _wordsize       = 2 #how many byte is required to describe word value 
-                        #binary: 2, ascii:4.
-    _debug          = False
 
+    plctype = const.F_SERIES
+    commtype = const.COMMTYPE_BINARY
+    pc = 0xFF
+    timer = 4  # MC protocol timeout. 250msec * 4 = 1 sec
+    soc_timeout = 2  # 2 sec
+    _is_connected = False
+    _SOCKBUFSIZE = 4096
+    _wordsize = 2  # how many byte is required to describe word value
+    # binary: 2, ascii:4.
+    _debug = False
 
-    def __init__(self, plctype ="F"):
-        """Constructor
-
-        """
+    def __init__(self, plctype="F"):
+        """Constructor"""
         self._set_plctype(plctype)
-    
+
     def _set_debug(self, debug=False):
-        """Turn on debug mode
-        """
+        """Turn on debug mode"""
         self._debug = debug
 
     def connect(self, ip, port):
@@ -78,7 +75,7 @@ class Type1E:
 
         Args:
             ip (str):       ip address(IPV4) to connect PLC
-            port (int):     port number of connect PLC   
+            port (int):     port number of connect PLC
             timeout (float):  timeout second in communication
 
         """
@@ -90,18 +87,16 @@ class Type1E:
         self._is_connected = True
 
     def close(self):
-        """Close connection
-
-        """
+        """Close connection"""
         self._sock.close()
         self._is_connected = False
 
     def _send(self, send_data):
-        """send mc protorocl data 
+        """send mc protorocl data
 
-        Args: 
+        Args:
             send_data(bytes): mc protocol data
-        
+
         """
         if self._is_connected:
             if self._debug:
@@ -123,7 +118,7 @@ class Type1E:
         """Check PLC type. If plctype is vaild, set self.commtype.
 
         Args:
-            plctype(str):      PLC type. "F" 
+            plctype(str):      PLC type. "F"
 
         """
         if plctype == "F":
@@ -135,7 +130,7 @@ class Type1E:
         """Check communication type. If commtype is vaild, set self.commtype.
 
         Args:
-            commtype(str):      communication type. "binary" or "ascii". (Default: "binary") 
+            commtype(str):      communication type. "binary" or "ascii". (Default: "binary")
 
         """
         if commtype == "binary":
@@ -145,16 +140,14 @@ class Type1E:
             raise CommTypeError()
 
     def _get_answerdata_index(self):
-        """Get answer data index from return data byte.
-        """
+        """Get answer data index from return data byte."""
         if self.commtype == const.COMMTYPE_BINARY:
             return 2
         else:
             raise ValueError("Only supported binary command type, now!")
 
     def _get_answerstatus_index(self):
-        """Get command status index from return data byte.
-        """
+        """Get command status index from return data byte."""
         if self.commtype == const.COMMTYPE_BINARY:
             return 1
         else:
@@ -164,9 +157,9 @@ class Type1E:
         """Set mc protocol access option.
 
         Args:
-            commtype(str):          communication type. "binary" or "ascii". (Default: "binary") 
+            commtype(str):          communication type. "binary" or "ascii". (Default: "binary")
             pc(int):                network module station No. of an access target. (0<= pc <= 255)
-            timer_sec(int):         Time out to return Timeout Error from PLC. 
+            timer_sec(int):         Time out to return Timeout Error from PLC.
                                     MC protocol time is per 250msec, but for ease, setaccessopt requires per sec.
                                     Socket time out is set timer_sec + 1 sec.
 
@@ -179,7 +172,7 @@ class Type1E:
                 pc.to_bytes(1, "little")
                 self.pc = pc
             except:
-                raise ValueError("pc must be 0 <= pc <= 255") 
+                raise ValueError("pc must be 0 <= pc <= 255")
 
         if timer_sec:
             try:
@@ -190,14 +183,14 @@ class Type1E:
                 if self._is_connected:
                     self._sock.settimeout(self.soc_timeout)
             except:
-                raise ValueError("timer_sec must be 0 <= timer_sec <= 16383, / sec") 
+                raise ValueError("timer_sec must be 0 <= timer_sec <= 16383, / sec")
         return None
-    
+
     def _make_senddata(self, subheader, requestdata):
         """Makes send mc protorocl data.
 
         Args:
-            requestdata(bytes): mc protocol request data. 
+            requestdata(bytes): mc protocol request data.
                                 data must be converted according to self.commtype
 
         Returns:
@@ -211,7 +204,7 @@ class Type1E:
         else:
             raise ValueError("Only supported binary command type, now!")
         mc_data += self._encode_value(self.pc, "byte")
-        #add self.timer size
+        # add self.timer size
         mc_data += self._encode_value(self.timer, "short")
         mc_data += requestdata
         return mc_data
@@ -231,28 +224,30 @@ class Type1E:
     #     command_data += self._encode_value(command, "short")
     #     command_data += self._encode_value(subcommand, "short")
     #     return command_data
-    
+
     def _make_devicedata(self, device):
         """make mc protocol device data. (device code and device number)
-        
+
         Args:
             device(str): device. (ex: "D1000", "Y1")
 
         Returns:
             device_data(bytes): device data
-            
+
         """
-        
+
         device_data = bytes()
 
         devicetype = re.search(r"\D+", device)
         if devicetype is None:
             raise ValueError("Invalid device ")
         else:
-            devicetype = devicetype.group(0)      
+            devicetype = devicetype.group(0)
 
         if self.commtype == const.COMMTYPE_BINARY:
-            devicecode, devicebase = const.DeviceConstants.get_binary_devicecode(self.plctype, devicetype)
+            devicecode, devicebase = const.DeviceConstants.get_binary_devicecode(
+                self.plctype, devicetype
+            )
             devicenum = int(get_device_number(device), devicebase)
             device_data += devicenum.to_bytes(4, "little")
             device_data += devicecode.to_bytes(2, "little")
@@ -263,14 +258,14 @@ class Type1E:
     def _encode_value(self, value, mode="short", isSigned=False):
         """encode mc protocol value data to byte.
 
-        Args: 
+        Args:
             value(int):   readsize, write value, and so on.
             mode(str):    value type.
             isSigned(bool): convert as sigend value
 
         Returns:
             value_byte(bytes):  value data
-        
+
         """
         try:
             if self.commtype == const.COMMTYPE_BINARY:
@@ -280,7 +275,7 @@ class Type1E:
                     value_byte = value.to_bytes(2, "little", signed=isSigned)
                 elif mode == "long":
                     value_byte = value.to_bytes(4, "little", signed=isSigned)
-                else: 
+                else:
                     raise ValueError("Please input value type")
             else:
                 raise ValueError("Only supported binary command type, now!")
@@ -291,30 +286,30 @@ class Type1E:
     def _decode_value(self, byte, mode="short", isSigned=False):
         """decode byte to value
 
-        Args: 
+        Args:
             byte(bytes):    readsize, write value, and so on.
             mode(str):      value type.
-            isSigned(bool): convert as sigend value  
+            isSigned(bool): convert as sigend value
 
         Returns:
             value_data(int):  value data
-        
+
         """
         try:
             if self.commtype == const.COMMTYPE_BINARY:
-                value =int.from_bytes(byte, "little", signed = isSigned)
+                value = int.from_bytes(byte, "little", signed=isSigned)
             else:
                 raise ValueError("Only supported binary command type, now!")
         except:
             raise ValueError("Could not decode byte to value")
         return value
-        
-    def _check_cmdanswer(self, recv_data):
-        """check command answer. If answer status is not 0, raise error according to answer  
 
-        """
-        answerstatus_index = self._get_answerstatus_index() 
-        answerstatus = self._decode_value(recv_data[answerstatus_index:answerstatus_index+1], "short")
+    def _check_cmdanswer(self, recv_data):
+        """check command answer. If answer status is not 0, raise error according to answer"""
+        answerstatus_index = self._get_answerstatus_index()
+        answerstatus = self._decode_value(
+            recv_data[answerstatus_index : answerstatus_index + 1], "short"
+        )
         mcprotocolerror.check_mcprotocol_error(answerstatus)
         return None
 
@@ -335,18 +330,22 @@ class Type1E:
         request_data += self._make_devicedata(headdevice)
         request_data += self._encode_value(readsize, "byte")
         request_data += self._encode_value(0, "byte")
-        send_data = self._make_senddata(subheader,request_data)
-    
-        #send mc data
+        send_data = self._make_senddata(subheader, request_data)
+
+        # send mc data
         self._send(send_data)
-        #reciev mc data
+        # reciev mc data
         recv_data = self._recv()
         self._check_cmdanswer(recv_data)
 
         word_values = []
         data_index = self._get_answerdata_index()
         for _ in range(readsize):
-            wordvalue = self._decode_value(recv_data[data_index:data_index+self._wordsize], mode="short", isSigned=True)
+            wordvalue = self._decode_value(
+                recv_data[data_index : data_index + self._wordsize],
+                mode="short",
+                isSigned=True,
+            )
             word_values.append(wordvalue)
             data_index += self._wordsize
         return word_values
@@ -370,21 +369,21 @@ class Type1E:
         request_data += self._encode_value(0, "byte")
         send_data = self._make_senddata(subheader, request_data)
 
-        #send mc data
+        # send mc data
         self._send(send_data)
-        #reciev mc data
+        # reciev mc data
         recv_data = self._recv()
         self._check_cmdanswer(recv_data)
 
         bit_values = []
         for i in range(readsize):
-            data_index = i//2 + self._get_answerdata_index()
-            value = int.from_bytes(recv_data[data_index:data_index+1], "little")
-            #if i//2==0, bit value is 4th bit
-            if(i%2==0):
-                bitvalue = 1 if value & (1<<4) else 0
+            data_index = i // 2 + self._get_answerdata_index()
+            value = int.from_bytes(recv_data[data_index : data_index + 1], "little")
+            # if i//2==0, bit value is 4th bit
+            if i % 2 == 0:
+                bitvalue = 1 if value & (1 << 4) else 0
             else:
-                bitvalue = 1 if value & (1<<0) else 0
+                bitvalue = 1 if value & (1 << 0) else 0
             bit_values.append(bitvalue)
 
         return bit_values
@@ -399,7 +398,7 @@ class Type1E:
         """
         write_size = len(values)
         subheader = 0x03
-        
+
         request_data = bytes()
         request_data += self._make_devicedata(headdevice)
         request_data += self._encode_value(write_size, "byte")
@@ -408,9 +407,9 @@ class Type1E:
             request_data += self._encode_value(value, isSigned=True)
         send_data = self._make_senddata(subheader, request_data)
 
-        #send mc data
+        # send mc data
         self._send(send_data)
-        #reciev mc data
+        # reciev mc data
         recv_data = self._recv()
         self._check_cmdanswer(recv_data)
 
@@ -427,34 +426,34 @@ class Type1E:
         write_size = len(values)
         subheader = 0x02
 
-        #check values
+        # check values
         for value in values:
-            if not (value == 0 or value == 1): 
+            if not (value == 0 or value == 1):
                 raise ValueError("Each value must be 0 or 1. 0 is OFF, 1 is ON.")
 
         request_data = bytes()
         request_data += self._make_devicedata(headdevice)
         request_data += self._encode_value(write_size, "byte")
         request_data += self._encode_value(0, "byte")
-        #evary value is 0 or 1.
-        #Even index's value turns on or off 4th bit, odd index's value turns on or off 0th bit.
-        #First, create send data list. Length must be ceil of len(values).
-        bit_data = [0 for _ in range((len(values) + 1)//2)]
+        # evary value is 0 or 1.
+        # Even index's value turns on or off 4th bit, odd index's value turns on or off 0th bit.
+        # First, create send data list. Length must be ceil of len(values).
+        bit_data = [0 for _ in range((len(values) + 1) // 2)]
         for index, value in enumerate(values):
-            #calc which index data should be turns on.
-            value_index = index//2
-            #calc which bit should be turns on.
-            bit_index = 4 if index%2 == 0 else 0
-            #turns on or off value of 4th or 0th bit, depends on value
+            # calc which index data should be turns on.
+            value_index = index // 2
+            # calc which bit should be turns on.
+            bit_index = 4 if index % 2 == 0 else 0
+            # turns on or off value of 4th or 0th bit, depends on value
             bit_value = value << bit_index
-            #Take or of send data
+            # Take or of send data
             bit_data[value_index] |= bit_value
         request_data += bytes(bit_data)
         send_data = self._make_senddata(subheader, request_data)
-                    
-        #send mc data
+
+        # send mc data
         self._send(send_data)
-        #reciev mc data
+        # reciev mc data
         recv_data = self._recv()
         self._check_cmdanswer(recv_data)
 
@@ -469,11 +468,11 @@ class Type1E:
         """
         if len(word_devices) != len(word_values):
             raise ValueError("word_devices and word_values must be same length")
-            
+
         word_size = len(word_devices)
 
         subheader = 0x05
-        
+
         request_data = bytes()
         request_data += self._encode_value(word_size, mode="byte")
         request_data += self._encode_value(0, "byte")
@@ -482,9 +481,9 @@ class Type1E:
             request_data += self._encode_value(word_value, mode="short", isSigned=True)
         send_data = self._make_senddata(subheader, request_data)
 
-        #send mc data
+        # send mc data
         self._send(send_data)
-        #reciev mc data
+        # reciev mc data
         recv_data = self._recv()
         self._check_cmdanswer(recv_data)
         return None
@@ -500,60 +499,56 @@ class Type1E:
         if len(bit_devices) != len(values):
             raise ValueError("bit_devices and values must be same length")
         write_size = len(values)
-        #check values
+        # check values
         for value in values:
-            if not (value == 0 or value == 1): 
+            if not (value == 0 or value == 1):
                 raise ValueError("Each value must be 0 or 1. 0 is OFF, 1 is ON.")
 
         subheader = 0x04
-        
+
         request_data = bytes()
         request_data += self._encode_value(write_size, mode="byte")
         request_data += self._encode_value(0, "byte")
         for bit_device, value in zip(bit_devices, values):
             request_data += self._make_devicedata(bit_device)
             request_data += self._encode_value(value, mode="byte", isSigned=True)
-        send_data = self._make_senddata(subheader, request_data)    
-                    
-        #send mc data
+        send_data = self._make_senddata(subheader, request_data)
+
+        # send mc data
         self._send(send_data)
-        #reciev mc data
+        # reciev mc data
         recv_data = self._recv()
         self._check_cmdanswer(recv_data)
 
         return None
 
     def remote_run(self):
-        """Run PLC
+        """Run PLC"""
 
-        """
-        
         subheader = 0x13
 
         request_data = bytes()
         send_data = self._make_senddata(subheader, request_data)
 
-        #send mc data
+        # send mc data
         self._send(send_data)
-        
-        #reciev mc data
+
+        # reciev mc data
         recv_data = self._recv()
         self._check_cmdanswer(recv_data)
         return None
 
     def remote_stop(self):
-        """ Stop remotely.
-
-        """
+        """Stop remotely."""
         subheader = 0x14
 
         request_data = bytes()
         send_data = self._make_senddata(subheader, request_data)
 
-        #send mc data
+        # send mc data
         self._send(send_data)
-        
-        #reciev mc data
+
+        # reciev mc data
         recv_data = self._recv()
         self._check_cmdanswer(recv_data)
         return None
@@ -571,9 +566,9 @@ class Type1E:
         request_data = bytes()
         send_data = self._make_senddata(subheader, request_data)
 
-        #send mc data
+        # send mc data
         self._send(send_data)
-        #reciev mc data
+        # reciev mc data
         recv_data = self._recv()
         self._check_cmdanswer(recv_data)
         data_index = self._get_answerdata_index()
@@ -595,25 +590,27 @@ class Type1E:
         """
         if echo_data.isalnum() is False:
             raise ValueError("echo_data must be only alphabet or digit code")
-        if not ( 1 <= len(echo_data) <= 254):
+        if not (1 <= len(echo_data) <= 254):
             raise ValueError("echo_data length must be from 1 to 254")
 
         subheader = 0x16
 
         request_data = bytes()
-        request_data += self._encode_value(len(echo_data), mode="short") 
+        request_data += self._encode_value(len(echo_data), mode="short")
         request_data += echo_data.encode()
 
         send_data = self._make_senddata(subheader, request_data)
 
-        #send mc data
+        # send mc data
         self._send(send_data)
-        #reciev mc data
+        # reciev mc data
         recv_data = self._recv()
         self._check_cmdanswer(recv_data)
 
         data_index = self._get_answerdata_index()
 
-        answer_len = self._decode_value(recv_data[data_index:data_index+self._wordsize], mode="short")
-        answer = recv_data[data_index+self._wordsize:].decode()
+        answer_len = self._decode_value(
+            recv_data[data_index : data_index + self._wordsize], mode="short"
+        )
+        answer = recv_data[data_index + self._wordsize :].decode()
         return answer_len, answer
