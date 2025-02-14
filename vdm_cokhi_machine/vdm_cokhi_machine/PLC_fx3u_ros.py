@@ -421,6 +421,22 @@ class PlcService(Node):
                 j + self.dataMachine_res_structure["underload"][1]
             ]
             machineState.offtime = dataMachines[j + self.dataMachine_res_structure["offtime"][1]]
+
+            # OEE
+            machineState.availability = round(
+                (machineState.noload + machineState.underload)
+                * 100.0
+                / (machineState.noload + machineState.underload + machineState.offtime)
+            )
+
+            machineState.performance = round(
+                machineState.underload
+                * 100.0
+                / (machineState.noload + machineState.underload + machineState.offtime)
+            )
+
+            machineState.quality = 100
+
             state_machines.append(machineState)
 
             if machineState.signal_light != self.machines[machineState.name].signalLight:

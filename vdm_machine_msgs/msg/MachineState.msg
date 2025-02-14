@@ -13,5 +13,6 @@ int32 underload
 int32 noload
 int32 error
 int32 offtime
-# ValueSetting value_setting
-# int32 time_reachspeed
+int32 availability
+int32 performance
+int32 quality
