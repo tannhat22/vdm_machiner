@@ -54,6 +54,8 @@ class State:
 
 
 class PlcService(Node):
+    machines: dict[str, State]
+
     def __init__(self):
         super().__init__("PC_service_ros")
         # Cấu hình các thông số quan trọng:
@@ -256,18 +258,12 @@ class PlcService(Node):
     # Lấy dữ liệu tất cả công đoạn và các máy thuộc công đoạn:
     def get_stages_inform_db(self):
         try:
-            self.cur.execute("SELECT * from " + self.tableName)
-            rows = self.cur.fetchall()
             result = {}
+            for name, machine in self.machines.items():
+                if machine.type not in result:
+                    result[machine.type] = []
 
-            for row in rows:
-                machine_name = row[1]
-                machine_type = row[2]
-
-                if machine_type not in result:
-                    result[machine_type] = []
-
-                result[machine_type].append(machine_name)
+                result[machine.type].append(name)
 
             return result
         except Exception as e:
@@ -761,16 +757,16 @@ class PlcService(Node):
 
     # Lấy giá trị ngày nhỏ nhất và lớn nhất trong database dựa theo stage
     def get_min_max_date_cb(self, request: GetMinMaxDate.Request, response: GetMinMaxDate.Response):
-        machinesInStage = self.get_machines_name_in_stage_db(request.stage)
-        if not machinesInStage:
-            return response
+        # machinesInStage = self.get_machines_name_in_stage_db(request.stage)
+        # if not machinesInStage:
+        #     return response
         minDate = datetime.datetime(2200, 1, 1).date()
         maxDate = datetime.datetime(2020, 1, 1).date()
 
-        for name in machinesInStage:
+        for machineName in self.machines.keys():
             # Lấy dữ liệu ngày từ database:
             dataHistory = self.get_history_machine_db(
-                tableName=name[0],
+                tableName=machineName,
                 minDate=datetime.datetime(2020, 1, 1).strftime("%d/%m/%Y"),
                 maxDate=datetime.datetime(2200, 1, 1).strftime("%d/%m/%Y"),
             )
