@@ -28,6 +28,7 @@ set(srv_files
   "srv/CreateMachine.srv"
   "srv/DeleteMachine.srv"
   "srv/GetAllMachineName.srv"
+  "srv/GetAllStageData.srv"
   "srv/GetMachineData.srv"
   "srv/GetMachineLogs.srv"
   "srv/GetMinMaxDate.srv"

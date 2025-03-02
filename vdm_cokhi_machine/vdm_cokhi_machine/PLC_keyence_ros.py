@@ -51,7 +51,6 @@ class PlcService(Node):
             os.path.expanduser("~"),
             "ros2_ws/src/vdm_machiner/vdm_cokhi_machine/database/machine.db",
         )
-        # self.database_path = '/home/raspberry/ros2_ws/src/vdm_machiner/vdm_cokhi_machine/database/machine.db'
         self.tableName = "MACHINES"
         self.conn = sqlite3.connect(self.database_path)
         self.cur = self.conn.cursor()

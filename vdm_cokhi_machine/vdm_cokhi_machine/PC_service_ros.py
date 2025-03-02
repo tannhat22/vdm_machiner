@@ -18,6 +18,7 @@ from vdm_machine_msgs.msg import (
 )
 from vdm_machine_msgs.srv import (
     GetAllMachineName,
+    GetAllStageData,
     GetMachineData,
     GetStageData,
     GetMachineLogs,
@@ -68,7 +69,6 @@ class PlcService(Node):
             os.path.expanduser("~"),
             "ros2_ws/src/vdm_machiner/vdm_cokhi_machine/database/machine.db",
         )
-        # self.database_path = '/home/raspberry/ros2_ws/src/vdm_machiner/vdm_cokhi_machine/database/machine.db'
         self.tableName = "MACHINES"
         self.conn = sqlite3.connect(
             self.database_path, detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES
@@ -94,6 +94,11 @@ class PlcService(Node):
         self.getStageData_srv = self.create_service(
             GetStageData, "get_stage_data", self.get_stage_data_cb
         )
+
+        self.getAllStageData_srv = self.create_service(
+            GetAllStageData, "get_all_stage_data", self.get_all_stage_data_cb
+        )
+
         self.getLogsData_srv = self.create_service(
             GetMachineLogs, "get_logs_data", self.get_machine_logs_cb
         )
@@ -243,6 +248,27 @@ class PlcService(Node):
             #     result.quantity += 1
             #     result.machines.append(machine)
             # self.types_info = self.array_type_to_dict(result['machineType'])
+            return result
+        except Exception as e:
+            print(e)
+            return False
+
+    # Lấy dữ liệu tất cả công đoạn và các máy thuộc công đoạn:
+    def get_stages_inform_db(self):
+        try:
+            self.cur.execute("SELECT * from " + self.tableName)
+            rows = self.cur.fetchall()
+            result = {}
+
+            for row in rows:
+                machine_name = row[1]
+                machine_type = row[2]
+
+                if machine_type not in result:
+                    result[machine_type] = []
+
+                result[machine_type].append(machine_name)
+
             return result
         except Exception as e:
             print(e)
@@ -670,6 +696,67 @@ class PlcService(Node):
         response.stage_name = request.stage
         response.stage_data = stageData
 
+        return response
+
+    # Lấy dữ liệu của toàn bộ công đoạn dựa trên yêu cầu ngày cần lấy
+    def get_all_stage_data_cb(
+        self, request: GetAllStageData.Request, response: GetAllStageData.Response
+    ):
+        machinesInStages = self.get_stages_inform_db()
+        if not machinesInStages:
+            return response
+        # self.get_logger().info(f"Stage name length: {machinesInStages}")
+        allStageData = []
+        for stage in machinesInStages:
+            stageRawData = {"dates": [], "shift": [], "noload": [], "underload": [], "offtime": []}
+            for name in machinesInStages[stage]:
+                # Lấy dữ liệu ngày từ database:
+                dataHistory = self.get_history_machine_db(
+                    tableName=name[0],
+                    minDate=request.min_date,
+                    maxDate=request.max_date,
+                    shift=request.shift,
+                )
+                if dataHistory is None:
+                    return response
+
+                stageRawData["dates"].extend(dataHistory["dictType"]["dates"])
+                stageRawData["shift"].extend(dataHistory["dictType"]["shifts"])
+                stageRawData["noload"].extend(dataHistory["dictType"]["noload"])
+                stageRawData["underload"].extend(dataHistory["dictType"]["underload"])
+                stageRawData["offtime"].extend(dataHistory["dictType"]["offtime"])
+
+            k = len(stageRawData["dates"])
+            stageSumRaw = {}
+            for i in range(0, k):
+                keyTime = f"{stageRawData['dates'][i]}-{stageRawData['shift'][i]}"
+                if keyTime not in stageSumRaw:
+                    machineMsg = MachineData()
+                    machineMsg.date = stageRawData["dates"][i]
+                    machineMsg.shift = stageRawData["shift"][i]
+                    machineMsg.noload = stageRawData["noload"][i]
+                    machineMsg.underload = stageRawData["underload"][i]
+                    machineMsg.offtime = stageRawData["offtime"][i]
+                    stageSumRaw[keyTime] = machineMsg
+                else:
+                    stageSumRaw[keyTime].noload += stageRawData["noload"][i]
+                    stageSumRaw[keyTime].underload += stageRawData["underload"][i]
+                    stageSumRaw[keyTime].offtime += stageRawData["offtime"][i]
+
+            stageSumFilter = dict(
+                sorted(
+                    stageSumRaw.items(), key=lambda item: self.text_to_date(item[0].split("-")[0])
+                )
+            )
+
+            stageMsg = MachineDataStamped()
+            stageMsg.machine_name = stage
+            stageMsg.machine_data = list(stageSumFilter.values())
+            allStageData.append(stageMsg)
+
+        response.success = True
+        response.status = self.status["success"]
+        response.all_stage_data = allStageData
         return response
 
     # Lấy giá trị ngày nhỏ nhất và lớn nhất trong database dựa theo stage
