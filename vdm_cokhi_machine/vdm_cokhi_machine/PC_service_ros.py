@@ -708,7 +708,7 @@ class PlcService(Node):
             for name in machinesInStages[stage]:
                 # Lấy dữ liệu ngày từ database:
                 dataHistory = self.get_history_machine_db(
-                    tableName=name[0],
+                    tableName=name,
                     minDate=request.min_date,
                     maxDate=request.max_date,
                     shift=request.shift,
