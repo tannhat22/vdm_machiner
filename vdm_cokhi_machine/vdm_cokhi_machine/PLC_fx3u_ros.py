@@ -80,14 +80,14 @@ class PlcService(Node):
         # ------ Address all device -------:
         ## System data:
         ## Clock resgister:
-        # year(0-99):       D700
-        # month(1-12):      D701
-        # day(1-31):        D702
-        # hour(0-23):       D703
-        # minute(0-59):     D704
-        # second(0-59):     D705
-        # day-of-week(0-6): D706 (0: sunday, 1: monday, 2: tuesday, 3: wednesday, 4: thursday, 5: friday, 6: saturday)
-        self.clock_res = DeviceContext("D700", 7, ".U")
+        # second(0-59):     D8013
+        # minute(0-59):     D8014
+        # hour(0-23):       D8015
+        # day(1-31):        D8016
+        # month(1-12):      D8017
+        # year(0-99):       D8018
+        # day-of-week(0-6): D8019 (0: sunday, 1: monday, 2: tuesday, 3: wednesday, 4: thursday, 5: friday, 6: saturday)
+        self.clock_res = DeviceContext("D8013", 7, ".U")
         self.password_write_res = DeviceContext("D500", 1, ".U")
         self.reset_machine_res = DeviceContext("D510", 1, ".U")
 
@@ -386,12 +386,12 @@ class PlcService(Node):
         dataClock = self.pyPLC.batchread_wordunits(self.clock_res)
 
         realTimePLc = datetime.datetime(
-            2000 + dataClock[0],
-            dataClock[1],
-            dataClock[2],
-            dataClock[3],
+            2000 + dataClock[5],
             dataClock[4],
-            dataClock[5],
+            dataClock[3],
+            dataClock[2],
+            dataClock[1],
+            dataClock[0],
         )
 
         # CN-06:00:00-17:59:59, CD-18:00:00:-05:59:59

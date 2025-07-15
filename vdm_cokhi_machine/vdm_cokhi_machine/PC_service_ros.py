@@ -1145,7 +1145,7 @@ class PlcService(Node):
         currentShift = MachineStateArray.NIGHT_SHIFT
         if (
             current_time.time() >= self.dayShift[0]
-            and current_time.time() >= self.dayShift[1]
+            and current_time.time() <= self.dayShift[1]
         ):
             currentShift = MachineStateArray.DAY_SHIFT
 
@@ -1159,7 +1159,7 @@ class PlcService(Node):
             self.last_stages_saved is None
             or (current_time.timestamp() - self.last_stages_saved)
             >= self.saved_stages_interval
-        ):
+        ) and len(overral_machines_dict) > 0:
             self.last_stages_saved = current_time.timestamp()
             self.add_stages_log(overral_machines_dict)
 
