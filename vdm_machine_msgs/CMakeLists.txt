@@ -34,6 +34,7 @@ set(srv_files
   "srv/GetMinMaxDate.srv"
   "srv/GetProducePlan.srv"
   "srv/GetStageData.srv"
+  "srv/GetStagesLogs.srv"
   "srv/ResetMachine.srv"
   "srv/ResetMachinePLC.srv"
   "srv/UpdateMachine.srv"

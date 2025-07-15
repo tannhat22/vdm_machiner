@@ -1,9 +1,10 @@
-import rclpy
-from rclpy.node import Node
+import os
+import json
 import sqlite3
 import datetime
+import rclpy
+from rclpy.node import Node
 from collections import Counter
-import os
 
 from std_msgs.msg import Empty
 from vdm_machine_msgs.msg import (
@@ -21,6 +22,7 @@ from vdm_machine_msgs.srv import (
     GetAllStageData,
     GetMachineData,
     GetStageData,
+    GetStagesLogs,
     GetMachineLogs,
     GetMinMaxDate,
     CreateMachine,
@@ -60,7 +62,10 @@ class PlcService(Node):
         super().__init__("PC_service_ros")
         # Cấu hình các thông số quan trọng:
         self.declare_parameter("password", "10064")
+        self.declare_parameter("saved_stages_interval", 600)
         self.password = self.get_parameter("password").value
+        self.saved_stages_interval = self.get_parameter("saved_stages_interval").value
+
         self.maximumDates = 365
         # self.plc_keyence = 'KV-5500'
         # self.plc_mitsu = 'FX3U'
@@ -73,7 +78,8 @@ class PlcService(Node):
         )
         self.tableName = "MACHINES"
         self.conn = sqlite3.connect(
-            self.database_path, detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES
+            self.database_path,
+            detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
         )
         self.cur = self.conn.cursor()
         self.create_table_group_machines_db(self.tableName)
@@ -101,6 +107,10 @@ class PlcService(Node):
             GetAllStageData, "get_all_stage_data", self.get_all_stage_data_cb
         )
 
+        self.getStagesLogs_srv = self.create_service(
+            GetStagesLogs, "get_stages_logs", self.get_stages_logs_cb
+        )
+
         self.getLogsData_srv = self.create_service(
             GetMachineLogs, "get_logs_data", self.get_machine_logs_cb
         )
@@ -120,7 +130,9 @@ class PlcService(Node):
 
         # Ros pub, sub:
         # Publishers:
-        self.pub_state_machines = self.create_publisher(MachinesStateStamped, "/state_machines", 10)
+        self.pub_state_machines = self.create_publisher(
+            MachinesStateStamped, "/state_machines", 10
+        )
         self.pub_update_database = self.create_publisher(Empty, "/update_database", 10)
 
         # Subcribers:
@@ -157,11 +169,13 @@ class PlcService(Node):
         }
 
         # Variables:
-        self.shiftNow = MachineStateArray.DAY_SHIFT
+        self.lastShift = MachineStateArray.DAY_SHIFT
         self.dayShift = [
             datetime.time(hour=6, minute=30, second=0),
             datetime.time(hour=18, minute=29, second=59),
         ]
+
+        self.last_stages_saved = None
 
         timer_period = 0.5
         self.timer = self.create_timer(timer_period, self.timer_callback)
@@ -186,8 +200,12 @@ class PlcService(Node):
                 for row in rows:
                     self.create_table_machine_history_db(row[1])
                     self.create_table_machine_logs_db(row[1])
+
+            self.create_table_stages_logs()
+            self.delete_all_stages_log()
+
         except Exception as e:
-            print(Exception)
+            print(e)
         return
 
     # Tạo bảng database history cho máy được cài đặt nếu chưa có:
@@ -204,7 +222,7 @@ class PlcService(Node):
                  OFFTIME INTEGER NOT NULL);"""
             )
         except Exception as e:
-            print(Exception)
+            print(e)
         return
 
     # Tạo bảng database logs cho máy được cài đặt nếu chưa có:
@@ -220,8 +238,21 @@ class PlcService(Node):
                  STATE TEXT NOT NULL);"""
             )
         except Exception as e:
-            print(Exception)
+            print(e)
         return
+
+    # Tạo bảng database stages log nếu chưa có:
+    def create_table_stages_logs(self):
+        try:
+            self.cur.execute(
+                """CREATE TABLE IF NOT EXISTS STAGES_LOGS (
+                    ID INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    TIME TEXT NOT NULL,
+                    DATA TEXT NOT NULL
+                );"""
+            )
+        except Exception as e:
+            print(e)
 
     # Lấy dữ liệu tên của tất cả các máy từ database
     def get_machines_inform_db(self):
@@ -273,7 +304,9 @@ class PlcService(Node):
     # Lấy tên của machine trong bảng dựa vào thông số đầu vào là ID
     def get_machine_name_db(self, id):
         try:
-            self.cur.execute("SELECT NAME FROM " + self.tableName + " WHERE ID = ?", (id,))
+            self.cur.execute(
+                "SELECT NAME FROM " + self.tableName + " WHERE ID = ?", (id,)
+            )
             machineName = self.cur.fetchone()[0]
             return machineName
         except Exception as e:
@@ -301,7 +334,9 @@ class PlcService(Node):
     # Lấy tất cả tên của machine trong bảng dựa vào thông số đầu vào là stage:
     def get_machines_name_in_stage_db(self, stage):
         try:
-            self.cur.execute("SELECT NAME FROM " + self.tableName + " WHERE TYPE = ?", (stage,))
+            self.cur.execute(
+                "SELECT NAME FROM " + self.tableName + " WHERE TYPE = ?", (stage,)
+            )
             machinesName = self.cur.fetchall()
             return machinesName
         except Exception as e:
@@ -320,10 +355,18 @@ class PlcService(Node):
             if not shift:
                 self.cur.execute("SELECT * from " + tableName)
             else:
-                self.cur.execute("SELECT * from " + tableName + " WHERE SHIFT = ?", (shift,))
+                self.cur.execute(
+                    "SELECT * from " + tableName + " WHERE SHIFT = ?", (shift,)
+                )
             rows = self.cur.fetchall()
             msgType = []
-            dictType = {"dates": [], "shifts": [], "noload": [], "underload": [], "offtime": []}
+            dictType = {
+                "dates": [],
+                "shifts": [],
+                "noload": [],
+                "underload": [],
+                "offtime": [],
+            }
             for row in rows:
                 dataMsg = MachineData()
                 date = row[1].date()
@@ -347,18 +390,22 @@ class PlcService(Node):
             return None
 
     # Lấy dữ liệu logging theo ngày của một máy từ database
-    def get_logs_machine_db(self, tableName, minDate: str = "", maxDate: str = "", shift: str = ""):
+    def get_logs_machine_db(
+        self, tableName, minDate: str = "", maxDate: str = "", shift: str = ""
+    ):
         try:
             # self.get_logger().info(f'machine name: {tableName}')
             minDateObj = self.text_to_date(minDate)
             maxDateObj = self.text_to_date(maxDate)
 
             if shift == "CN":
-                self.cur.execute("SELECT * from " + tableName + " WHERE DATE = ?", (maxDate,))
-            elif shift == "CD":
-                nightShift = (self.text_to_datetime(maxDate) + datetime.timedelta(days=1)).strftime(
-                    "%d/%m/%Y"
+                self.cur.execute(
+                    "SELECT * from " + tableName + " WHERE DATE = ?", (maxDate,)
                 )
+            elif shift == "CD":
+                nightShift = (
+                    self.text_to_datetime(maxDate) + datetime.timedelta(days=1)
+                ).strftime("%d/%m/%Y")
                 self.cur.execute(
                     "SELECT * from " + tableName + " WHERE DATE = ? OR DATE = ?",
                     (maxDate, nightShift),
@@ -410,11 +457,27 @@ class PlcService(Node):
             self.get_logger().info(f"{e}")
             return None
 
+    # Lấy dữ liệu logging hiện tại của tất cả công đoạn từ database
+    def get_stages_logs_db(self):
+        try:
+            self.cur.execute("SELECT TIME, DATA FROM STAGES_LOGS")
+            rows = self.cur.fetchall()
+            result = {}
+            for row in rows:
+                # row[0]: TIME, row[1]: DATA (JSON string)
+                result.update({row[0]: json.loads(row[1])})
+            return result
+        except Exception as e:
+            print(e)
+            return {}
+
     # Tạo thêm máy mới vào database
     def add_machine_db(self, name, type, plc, address):
         try:
             self.cur.execute(
-                "INSERT INTO " + self.tableName + " (NAME, TYPE, PLC, ADDRESS) VALUES (?, ?, ?, ?)",
+                "INSERT INTO "
+                + self.tableName
+                + " (NAME, TYPE, PLC, ADDRESS) VALUES (?, ?, ?, ?)",
                 (name, type, plc, address),
             )
             self.create_table_machine_history_db(name)
@@ -446,13 +509,34 @@ class PlcService(Node):
     #         print(e)
     #         return False
 
+    # Thêm dữ liệu stages log mới vào bảng database:
+    def add_stages_log(self, stages: dict):
+        try:
+            # time_24h_ago = (
+            #     datetime.datetime.now() - datetime.timedelta(hours=24)
+            # ).strftime("%Y-%m-%d %H:%M:%S")
+            # self.cur.execute("DELETE FROM STAGES_LOGS WHERE TIME < ?", (time_24h_ago,))
+
+            stages_json = json.dumps(stages, ensure_ascii=False)
+            now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.cur.execute(
+                "INSERT INTO STAGES_LOGS (TIME, DATA) VALUES (?, ?)", (now, stages_json)
+            )
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(e)
+            return False
+
     # Sửa tên bảng trong database:
     def update_table_name(self, tableOldName, tableNewName):
         try:
             if tableOldName == tableNewName:
                 pass
             else:
-                self.cur.execute("ALTER TABLE " + tableOldName + " RENAME TO " + tableNewName)
+                self.cur.execute(
+                    "ALTER TABLE " + tableOldName + " RENAME TO " + tableNewName
+                )
                 self.conn.commit()
             return True
         except Exception as e:
@@ -493,8 +577,12 @@ class PlcService(Node):
     def delete_machine_db(self, id):
         try:
             machineName = self.get_machine_name_db(id)
-            if self.delete_table(machineName) and self.delete_table(machineName + "_logs"):
-                self.cur.execute("DELETE FROM " + self.tableName + " WHERE ID = ?", (id,))
+            if self.delete_table(machineName) and self.delete_table(
+                machineName + "_logs"
+            ):
+                self.cur.execute(
+                    "DELETE FROM " + self.tableName + " WHERE ID = ?", (id,)
+                )
                 self.conn.commit()
                 return True
             return False
@@ -502,10 +590,22 @@ class PlcService(Node):
             print(e)
             return False
 
+    # Xóa toàn bộ dữ liệu stages log:
+    def delete_all_stages_log(self):
+        try:
+            self.cur.execute("DELETE FROM STAGES_LOGS")
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(e)
+            return False
+
     # Kiểm tra tên machine có tồn tại trong database:
     def checkNameIsExists(self, name, ID: int = None):
         try:
-            self.cur.execute("SELECT ID FROM " + self.tableName + " WHERE name = ?", (name,))
+            self.cur.execute(
+                "SELECT ID FROM " + self.tableName + " WHERE name = ?", (name,)
+            )
             data = self.cur.fetchone()
             if data is None:
                 return False
@@ -632,18 +732,26 @@ class PlcService(Node):
         return response
 
     # Lấy dữ liệu của một công đoạn dựa trên yêu cầu loại công đoạn và ngày cần lấy
-    def get_stage_data_cb(self, request: GetStageData.Request, response: GetStageData.Response):
+    def get_stage_data_cb(
+        self, request: GetStageData.Request, response: GetStageData.Response
+    ):
         machinesInStage = self.get_machines_name_in_stage_db(request.stage)
         if not machinesInStage:
             return response
         # self.get_logger().info(f"Machine name length in stage: {machinesInStage}")
 
-        stageRawData = {"dates": [], "shift": [], "noload": [], "underload": [], "offtime": []}
+        stageRawData = {
+            "dates": [],
+            "shift": [],
+            "noload": [],
+            "underload": [],
+            "offtime": [],
+        }
         stageData = []
         for name in machinesInStage:
             # Lấy dữ liệu ngày từ database:
             dataHistory = self.get_history_machine_db(
-                tableName=name[0],
+                tableName=name,
                 minDate=request.min_date,
                 maxDate=request.max_date,
                 shift=request.shift,
@@ -679,7 +787,10 @@ class PlcService(Node):
                 stageSumRaw[keyTime].offtime += stageRawData["offtime"][i]
 
         stageSumFilter = dict(
-            sorted(stageSumRaw.items(), key=lambda item: self.text_to_date(item[0].split("-")[0]))
+            sorted(
+                stageSumRaw.items(),
+                key=lambda item: self.text_to_date(item[0].split("-")[0]),
+            )
         )
 
         machineMsg = MachineDataStamped()
@@ -704,7 +815,13 @@ class PlcService(Node):
         # self.get_logger().info(f"Stage name length: {machinesInStages}")
         allStageData = []
         for stage in machinesInStages:
-            stageRawData = {"dates": [], "shift": [], "noload": [], "underload": [], "offtime": []}
+            stageRawData = {
+                "dates": [],
+                "shift": [],
+                "noload": [],
+                "underload": [],
+                "offtime": [],
+            }
             for name in machinesInStages[stage]:
                 # Lấy dữ liệu ngày từ database:
                 dataHistory = self.get_history_machine_db(
@@ -741,7 +858,8 @@ class PlcService(Node):
 
             stageSumFilter = dict(
                 sorted(
-                    stageSumRaw.items(), key=lambda item: self.text_to_date(item[0].split("-")[0])
+                    stageSumRaw.items(),
+                    key=lambda item: self.text_to_date(item[0].split("-")[0]),
                 )
             )
 
@@ -755,8 +873,19 @@ class PlcService(Node):
         response.all_stage_data = allStageData
         return response
 
+    def get_stages_logs_cb(
+        self, request: GetStagesLogs.Request, response: GetStagesLogs.Response
+    ):
+        stagesLogs = self.get_stages_logs_db()
+        response.success = True
+        response.status = self.status["success"]
+        response.json_msg = json.dumps(stagesLogs, ensure_ascii=False)
+        return response
+
     # Lấy giá trị ngày nhỏ nhất và lớn nhất trong database dựa theo stage
-    def get_min_max_date_cb(self, request: GetMinMaxDate.Request, response: GetMinMaxDate.Response):
+    def get_min_max_date_cb(
+        self, request: GetMinMaxDate.Request, response: GetMinMaxDate.Response
+    ):
         # machinesInStage = self.get_machines_name_in_stage_db(request.stage)
         # if not machinesInStage:
         #     return response
@@ -804,7 +933,9 @@ class PlcService(Node):
 
     #     return response
 
-    def create_machine_cb(self, request: CreateMachine.Request, response: CreateMachine.Response):
+    def create_machine_cb(
+        self, request: CreateMachine.Request, response: CreateMachine.Response
+    ):
         self.get_logger().info("Receiv request create new machine")
         if self.check_password(request.password):
             if request.name == "":
@@ -828,7 +959,10 @@ class PlcService(Node):
                 response.status = self.status["addressInuse"]
 
             elif not self.add_machine_db(
-                request.name.upper(), request.type, request.plc_model, request.plc_address
+                request.name.upper(),
+                request.type,
+                request.plc_model,
+                request.plc_address,
             ):
                 response.success = False
                 response.status = self.status["dbErr"]
@@ -844,7 +978,9 @@ class PlcService(Node):
         response.status = self.status["passErr"]
         return response
 
-    def update_machine_cb(self, request: UpdateMachine.Request, response: UpdateMachine.Response):
+    def update_machine_cb(
+        self, request: UpdateMachine.Request, response: UpdateMachine.Response
+    ):
         self.get_logger().info("Receiv request update machine")
         if self.check_password(request.password):
             if request.new_name == "":
@@ -890,7 +1026,9 @@ class PlcService(Node):
         response.status = self.status["passErr"]
         return response
 
-    def delete_machine_cb(self, request: DeleteMachine.Request, response: DeleteMachine.Response):
+    def delete_machine_cb(
+        self, request: DeleteMachine.Request, response: DeleteMachine.Response
+    ):
         self.get_logger().info("Receiv request delete machine")
         if self.check_password(request.password):
             if self.delete_machine_db(request.id_machine):
@@ -970,7 +1108,6 @@ class PlcService(Node):
             return None
 
     def state_machine_cb(self, msg: MachineStateArray):
-        self.shiftNow = msg.shift
         for state in msg.state_machines:
             if state.name in self.machines:
                 self.machines[state.name].state = state
@@ -982,6 +1119,7 @@ class PlcService(Node):
 
     def timer_callback(self):
         # if not self.machine_info: return
+        current_time = datetime.datetime.now()
         state_machines = []
         machineID = []
         overral_machines_dict = {}
@@ -993,7 +1131,9 @@ class PlcService(Node):
                 if machineState.type in overral_machines_dict:
                     overral_machines_dict[machineState.type][0] += 1
                     overral_machines_dict[machineState.type][1] += machineState.noload
-                    overral_machines_dict[machineState.type][2] += machineState.underload
+                    overral_machines_dict[machineState.type][
+                        2
+                    ] += machineState.underload
                     overral_machines_dict[machineState.type][3] += machineState.offtime
                 else:
                     overral_machines_dict[machineState.type] = [
@@ -1002,6 +1142,26 @@ class PlcService(Node):
                         machineState.underload,
                         machineState.offtime,
                     ]
+        currentShift = MachineStateArray.NIGHT_SHIFT
+        if (
+            current_time.time() >= self.dayShift[0]
+            and current_time.time() >= self.dayShift[1]
+        ):
+            currentShift = MachineStateArray.DAY_SHIFT
+
+        # Xóa toàn bộ dữ liệu logs của công đoạn khi chuyển ca
+        if self.lastShift != currentShift:
+            self.delete_all_stages_log()
+            self.lastShift = currentShift
+            self.last_stages_saved = None
+
+        if (
+            self.last_stages_saved is None
+            or (current_time.timestamp() - self.last_stages_saved)
+            >= self.saved_stages_interval
+        ):
+            self.last_stages_saved = current_time.timestamp()
+            self.add_stages_log(overral_machines_dict)
 
         # Tính số giờ theo từng loại máy
         overral_machines = []
@@ -1016,7 +1176,7 @@ class PlcService(Node):
 
         msg = MachinesStateStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.shift = self.shiftNow
+        msg.shift = currentShift
         msg.machines_quantity = len(machineID)
         msg.types_quantity = len(overral_machines_dict)
         msg.id_machines = machineID

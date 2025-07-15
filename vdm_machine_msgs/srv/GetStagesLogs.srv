@@ -1,0 +1,5 @@
+# Trigger
+---
+bool success
+string status
+string json_msg

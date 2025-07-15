@@ -1,6 +1,8 @@
 import re
 import socket
 import binascii
+import struct
+
 from . import mcprotocolerror
 from . import mcprotocolconst as const
 
@@ -17,6 +19,14 @@ def get_device_number(device):
     else:
         device_num_str = device_num.group(0)
     return device_num_str
+
+
+class DeviceContext:
+    def __init__(self, headdevice: str, size: int, format: str = "", name: str = None):
+        self.headdevice = headdevice
+        self.size = size
+        self.format = format
+        self.name = name
 
 
 class CommTypeError(Exception):
@@ -313,7 +323,17 @@ class Type1E:
         mcprotocolerror.check_mcprotocol_error(answerstatus)
         return None
 
-    def batchread_wordunits(self, headdevice, readsize):
+    def convert_unsigned_16bit_dec2char(self, data: int):
+        # Chuyển đổi mỗi thanh ghi thành 2 ký tự ASCII
+        string_result = chr(data & 0xFF) + chr(data >> 8)
+        string_cleaned = string_result.replace("\x00", "").strip()
+        return string_cleaned
+
+    def convert_signed_32bit_dec2float(self, value: int):
+        value_f = struct.unpack("f", struct.pack("I", value))[0]
+        return value_f
+
+    def batchread_wordunits(self, device: DeviceContext):
         """batch read in word units.
 
         Args:
@@ -326,9 +346,14 @@ class Type1E:
         """
         subheader = 0x01
 
+        wordsize = self._wordsize
         request_data = bytes()
-        request_data += self._make_devicedata(headdevice)
-        request_data += self._encode_value(readsize, "byte")
+        request_data += self._make_devicedata(device.headdevice)
+        if device.format in [".D", ".F", ".L"]:
+            wordsize = wordsize * 2
+            request_data += self._encode_value(device.size * 2, "byte")
+        else:
+            request_data += self._encode_value(device.size, "byte")
         request_data += self._encode_value(0, "byte")
         send_data = self._make_senddata(subheader, request_data)
 
@@ -340,17 +365,24 @@ class Type1E:
 
         word_values = []
         data_index = self._get_answerdata_index()
-        for _ in range(readsize):
+        for _ in range(device.size):
             wordvalue = self._decode_value(
-                recv_data[data_index : data_index + self._wordsize],
+                recv_data[data_index : data_index + wordsize],
                 mode="short",
                 isSigned=True,
             )
-            word_values.append(wordvalue)
-            data_index += self._wordsize
+            if device.format == ".C":
+                word_values.append(self.convert_unsigned_16bit_dec2char(wordvalue))
+            elif device.format == ".F":
+                word_values.append(self.convert_signed_32bit_dec2float(wordvalue))
+            else:
+                word_values.append(wordvalue)
+
+            # word_values.append(wordvalue)
+            data_index += wordsize
         return word_values
 
-    def batchread_bitunits(self, headdevice, readsize):
+    def batchread_bitunits(self, device: DeviceContext):
         """batch read in bit units.
 
         Args:
@@ -364,8 +396,8 @@ class Type1E:
         subheader = 0x00
 
         request_data = bytes()
-        request_data += self._make_devicedata(headdevice)
-        request_data += self._encode_value(readsize, "byte")
+        request_data += self._make_devicedata(device.headdevice)
+        request_data += self._encode_value(device.size, "byte")
         request_data += self._encode_value(0, "byte")
         send_data = self._make_senddata(subheader, request_data)
 
@@ -376,7 +408,7 @@ class Type1E:
         self._check_cmdanswer(recv_data)
 
         bit_values = []
-        for i in range(readsize):
+        for i in range(device.size):
             data_index = i // 2 + self._get_answerdata_index()
             value = int.from_bytes(recv_data[data_index : data_index + 1], "little")
             # if i//2==0, bit value is 4th bit
@@ -388,7 +420,7 @@ class Type1E:
 
         return bit_values
 
-    def batchwrite_wordunits(self, headdevice, values):
+    def batchwrite_wordunits(self, device: DeviceContext, values: list[int]):
         """batch write in word units.
 
         Args:
@@ -400,7 +432,7 @@ class Type1E:
         subheader = 0x03
 
         request_data = bytes()
-        request_data += self._make_devicedata(headdevice)
+        request_data += self._make_devicedata(device.headdevice)
         request_data += self._encode_value(write_size, "byte")
         request_data += self._encode_value(0, "byte")
         for value in values:
@@ -415,7 +447,7 @@ class Type1E:
 
         return None
 
-    def batchwrite_bitunits(self, headdevice, values):
+    def batchwrite_bitunits(self, device: DeviceContext, values: list[int]):
         """batch read in bit units.
 
         Args:
@@ -432,7 +464,7 @@ class Type1E:
                 raise ValueError("Each value must be 0 or 1. 0 is OFF, 1 is ON.")
 
         request_data = bytes()
-        request_data += self._make_devicedata(headdevice)
+        request_data += self._make_devicedata(device.headdevice)
         request_data += self._encode_value(write_size, "byte")
         request_data += self._encode_value(0, "byte")
         # evary value is 0 or 1.
@@ -459,7 +491,7 @@ class Type1E:
 
         return None
 
-    def randomwrite_wordunits(self, word_devices, word_values):
+    def randomwrite_wordunits(self, word_devices: list[str], word_values: list[int]):
         """write word units and dword units randomly.
 
         Args:
@@ -520,6 +552,22 @@ class Type1E:
         recv_data = self._recv()
         self._check_cmdanswer(recv_data)
 
+        return None
+
+    def set_time(self, year, month, day, hour, minutes, seconds, weeks):
+        """This command is used to set the time of CPU unit.
+        Args:
+            year: Enter the year using two digits."00" represents the year 2000. The range is 0 to 99.
+            month: Enter the month using two digits. The range is 01 to 12.
+            day: Enter the day using two digits. The range is 01 to 31.
+            hour: Enter the hour using two digits. The range is 00 to 23.
+            minutes: Enter the minutes using two digits. The range is 00 to 59.
+            seconds: Enter the seconds using two digits. The range is 00 to 59.
+            weeks: Enter the week using 1 digit. The table below shows the relationship between day of the week and input value
+        """
+        data = [seconds, minutes, hour, day, month, year, weeks]
+        timeDevice = DeviceContext("D8013", 7, ".U")
+        self.batchwrite_wordunits(timeDevice, data)
         return None
 
     def remote_run(self):

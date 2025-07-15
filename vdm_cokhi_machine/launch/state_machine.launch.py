@@ -75,7 +75,7 @@ def generate_launch_description():
                 parameters=[
                     {
                         "port": 9090,
-                        "address": "192.168.48.247",
+                        "address": "10.7.11.40",
                         "retry_startup_delay": 5.0,
                         "fragment_timeout": 600,
                         "delay_between_messages": 0,
@@ -114,7 +114,13 @@ def generate_launch_description():
                 name="PC_service_ros",
                 output="screen",
                 emulate_tty=True,
-                parameters=[{"password": "10064"}],
+                respawn=True,
+                parameters=[
+                    {
+                        "password": "10064",
+                        "saved_stages_interval": 30,
+                    }
+                ],
             ),
             Node(
                 package="vdm_cokhi_machine",
@@ -123,6 +129,7 @@ def generate_launch_description():
                 name="PLC_mitsu_ros_catgot1",
                 output="screen",
                 emulate_tty=True,
+                respawn=True,
                 parameters=[
                     {
                         "PLC_model": "FX3U_CatGot1",
@@ -140,6 +147,7 @@ def generate_launch_description():
                 name="PLC_mitsu_ros_chinhxac",
                 output="screen",
                 emulate_tty=True,
+                respawn=True,
                 parameters=[
                     {
                         "PLC_model": "FX3U_ChinhXac",
@@ -157,6 +165,7 @@ def generate_launch_description():
                 name="PLC_keyence_ros",
                 output="screen",
                 emulate_tty=True,
+                respawn=True,
                 parameters=[
                     {
                         "PLC_model": "KV_5500",
